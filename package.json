@@ -1,0 +1,21 @@
+{
+  "name": "cryptobot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Six-agent crypto paper-trading bot: scanner, risk check, sizer, executor, logger, equity curve. Paper only — no real orders.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.ts --mode live",
+    "sim": "node --disable-warning=ExperimentalWarning src/main.ts --mode sim",
+    "backtest": "node --disable-warning=ExperimentalWarning src/main.ts --mode backtest",
+    "typecheck": "tsc",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.8.3"
+  }
+}

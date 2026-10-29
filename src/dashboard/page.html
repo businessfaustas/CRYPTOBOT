@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cryptobot Terminal</title>
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #12151d; --line: #222836; --text: #d7dce6; --dim: #7c8597;
+    --green: #3ddc97; --red: #ff5c6c; --yellow: #f5c451; --blue: #5aa9ff; --violet: #a98bff; --orange: #ff9b50;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-size: 13px; }
+  header { display: flex; flex-wrap: wrap; gap: 24px; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 20px; margin: 0; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid currentColor; }
+  .paper { color: var(--yellow); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 6px; }
+  .dot.off { background: var(--red); }
+  .kpi { display: flex; flex-direction: column; }
+  .kpi b { font-size: 22px; }
+  .kpi span { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  main { display: grid; grid-template-columns: 280px 1fr 1fr; gap: 12px; padding: 12px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+  section h2 { margin: 0 0 10px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+  .agents { grid-row: span 3; }
+  .agent { border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+  .agent.blocked { border-color: var(--red); box-shadow: 0 0 12px #ff5c6c33; }
+  .agent.working { border-color: var(--blue); }
+  .agent .name { display: flex; justify-content: space-between; font-weight: bold; }
+  .agent .role { color: var(--dim); font-size: 11px; margin: 2px 0 6px; }
+  .agent .last { font-size: 12px; word-break: break-word; }
+  .pill { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: var(--line); text-transform: uppercase; }
+  .pill.blocked { background: var(--red); color: #000; } .pill.working { background: var(--blue); color: #000; }
+  .wide { grid-column: span 2; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--dim); font-weight: normal; font-size: 11px; }
+  td.reason { white-space: normal; color: var(--dim); font-size: 11px; min-width: 200px; }
+  .pos { color: var(--green); } .neg { color: var(--red); } .dim { color: var(--dim); }
+  .scroll { max-height: 340px; overflow: auto; }
+  .log div { padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  .k { display: inline-block; min-width: 76px; font-size: 10px; text-transform: uppercase; }
+  .k-entry { color: var(--green); } .k-exit { color: var(--blue); } .k-filtered, .k-killswitch, .k-error { color: var(--red); }
+  .k-signal { color: var(--yellow); } .k-sized { color: var(--violet); } .k-skip { color: var(--orange); }
+  svg { width: 100%; height: 180px; display: block; }
+  .empty { color: var(--dim); padding: 8px 0; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr 1fr; } .agents { grid-row: auto; grid-column: span 2; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; } .agents h2 { grid-column: 1 / -1; } .agent { margin: 0; } }
+  @media (max-width: 700px) { main { grid-template-columns: 1fr; padding: 8px; } .wide, .agents { grid-column: auto; } header { gap: 14px; padding: 12px 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Cryptobot Terminal <span class="badge paper">PAPER</span></h1>
+    <div class="dim" style="margin-top:4px"><span class="dot" id="dot"></span><span id="status">connecting…</span></div>
+  </div>
+  <div class="kpi"><b id="equity">—</b><span>equity</span></div>
+  <div class="kpi"><b id="ret">—</b><span>return</span></div>
+  <div class="kpi"><b id="trades">0</b><span>trades</span></div>
+  <div class="kpi"><b id="wl">0 / 0</b><span>wins / losses</span></div>
+  <div class="kpi"><b id="dd">—</b><span>max drawdown</span></div>
+  <div class="kpi"><b id="pf">—</b><span>profit factor</span></div>
+</header>
+<main>
+  <section class="agents" id="agents"><h2>Agents</h2></section>
+  <section class="wide"><h2>Equity curve</h2><svg id="curve" viewBox="0 0 800 180" preserveAspectRatio="none"></svg></section>
+  <section class="wide"><h2>Markets · scanner view</h2><div class="scroll"><table id="markets"></table></div></section>
+  <section><h2>Open positions</h2><div class="scroll"><table id="positions"></table></div></section>
+  <section><h2>Closed trades</h2><div class="scroll"><table id="trades-table"></table></div></section>
+  <section class="wide" style="grid-column: 1 / -1"><h2>Log · every decision has a reason</h2><div class="scroll log" id="log"></div></section>
+</main>
+<script>
+const ROLES = {
+  scanner: 'flags breakouts, never trades',
+  risk: 'nothing executes before a pass',
+  sizer: 'sizes from equity and stop distance',
+  executor: 'paper fills, tracks slippage',
+  logger: 'no trade without a reason',
+  equity: 'balance and curve',
+};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const usd = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const px = (n) => n == null ? '—' : n >= 100 ? n.toFixed(2) : n >= 1 ? n.toFixed(4) : n.toPrecision(4);
+const pct = (f) => (f >= 0 ? '+' : '') + (f * 100).toFixed(2) + '%';
+const cls = (n) => n > 0 ? 'pos' : n < 0 ? 'neg' : '';
+const time = (t) => t ? new Date(t * 1000).toISOString().slice(5, 19).replace('T', ' ') : '—';
+
+function render(s) {
+  $('status').textContent = `${s.mode} · ${s.feed} · market time ${time(s.now)}${s.killSwitch ? ' · DAILY LOSS LIMIT HIT' : ''}`;
+  $('equity').textContent = usd(s.equity);
+  $('ret').textContent = pct(s.stats.returnPct); $('ret').className = cls(s.stats.returnPct);
+  $('trades').textContent = s.stats.trades;
+  $('wl').textContent = `${s.stats.wins} / ${s.stats.losses}`;
+  $('dd').textContent = (s.stats.maxDrawdownPct * 100).toFixed(2) + '%';
+  $('pf').textContent = s.stats.profitFactor == null ? '∞' : s.stats.trades ? s.stats.profitFactor.toFixed(2) : '—';
+
+  $('agents').innerHTML = '<h2>Agents</h2>' + Object.entries(s.agents).map(([name, a]) => `
+    <div class="agent ${a.state}">
+      <div class="name"><span>${name.toUpperCase()}</span><span class="pill ${a.state}">${a.state}</span></div>
+      <div class="role">${ROLES[name]} · ${a.count} actions</div>
+      <div class="last">${esc(a.last)}</div>
+    </div>`).join('');
+
+  $('markets').innerHTML = '<tr><th>Symbol</th><th>Mid</th><th>Spread</th><th>Scanner</th></tr>' + s.markets.map((m) =>
+    `<tr><td>${m.symbol}</td><td>${px(m.price)}</td><td>${m.spreadBps == null ? '—' : m.spreadBps.toFixed(1) + 'bps'}</td><td class="reason">${esc(m.note)}</td></tr>`).join('');
+
+  $('positions').innerHTML = s.positions.length
+    ? '<tr><th>Symbol</th><th>Entry</th><th>Mark</th><th>Stop</th><th>Target</th><th>P&amp;L</th></tr>' + s.positions.map((p) =>
+      `<tr><td>${p.symbol}</td><td>${px(p.entryPrice)}</td><td>${px(p.mark)}</td><td>${px(p.stop)}</td><td>${px(p.target)}</td><td class="${cls(p.unrealized)}">${usd(p.unrealized)}</td></tr>
+       <tr><td colspan="6" class="reason">${esc(p.reason)}</td></tr>`).join('')
+    : '<tr><td class="empty">flat — waiting for a setup that passes risk</td></tr>';
+
+  $('trades-table').innerHTML = s.trades.length
+    ? '<tr><th>Symbol</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>Slip</th></tr>' + s.trades.map((t) =>
+      `<tr><td>${t.symbol}</td><td>${px(t.entryPrice)}</td><td>${px(t.exitPrice)}</td><td class="${cls(t.pnl)}">${usd(t.pnl)} (${pct(t.pnlPct)})</td><td>${(t.entrySlippageBps + t.exitSlippageBps).toFixed(1)}bps</td></tr>
+       <tr><td colspan="5" class="reason">in: ${esc(t.reason)}<br>out: ${esc(t.exitReason)}</td></tr>`).join('')
+    : '<tr><td class="empty">no closed trades yet</td></tr>';
+
+  $('log').innerHTML = s.log.map((e) =>
+    `<div><span class="dim">${time(e.time)} #${e.seq}</span> <span class="k k-${e.kind}">${e.kind}</span> <b>${esc(e.symbol || '')}</b> ${esc(e.message)}</div>`).join('') || '<div class="empty">nothing logged yet</div>';
+
+  drawCurve(s.curve, s.stats.start);
+}
+
+function drawCurve(points, start) {
+  const svg = $('curve');
+  if (points.length < 2) { svg.innerHTML = ''; return; }
+  const ys = points.map((p) => p.equity).concat(start);
+  const lo = Math.min(...ys), hi = Math.max(...ys), span = hi - lo || 1;
+  const x = (i) => (i / (points.length - 1)) * 800;
+  const y = (v) => 170 - ((v - lo) / span) * 160;
+  const d = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.equity).toFixed(1)}`).join(' ');
+  const up = points.at(-1).equity >= start;
+  svg.innerHTML = `<line x1="0" x2="800" y1="${y(start)}" y2="${y(start)}" stroke="#7c8597" stroke-dasharray="4 4" stroke-width="1" vector-effect="non-scaling-stroke"/>
+    <path d="${d}" fill="none" stroke="${up ? '#3ddc97' : '#ff5c6c'}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+}
+
+function connect() {
+  const es = new EventSource('/events');
+  es.onmessage = (ev) => { $('dot').className = 'dot'; render(JSON.parse(ev.data)); };
+  es.onerror = () => { $('dot').className = 'dot off'; $('status').textContent = 'disconnected — is the bot running?'; };
+}
+connect();
+</script>
+</body>
+</html>
