@@ -48,17 +48,19 @@ export class SimFeed implements Feed {
   readonly name: string;
   private readonly opts: SimOptions;
   private readonly rand: () => number;
+  private intervalMs: number;
   private stopped = false;
   private wake: (() => void) | null = null;
 
   constructor(opts: SimOptions) {
     this.opts = opts;
     this.rand = mulberry32(opts.seed);
+    this.intervalMs = opts.intervalMs;
     this.name = `sim (seed ${opts.seed})`;
   }
 
   async run(onSnapshot: (snap: MarketSnapshot) => void): Promise<void> {
-    const { candleSeconds, historySize, intervalMs } = this.opts;
+    const { candleSeconds, historySize } = this.opts;
     const timeScale = Math.sqrt(candleSeconds / 60);
     const states: SymbolState[] = this.opts.symbols.map((symbol) => {
       const profile = PROFILES[symbol] ?? { price: 100, sigma: 0.002, volume: 10_000, spreadBps: 5 };
@@ -89,13 +91,19 @@ export class SimFeed implements Feed {
           bar,
         });
       }
-      if (intervalMs > 0) await this.sleep(intervalMs);
+      if (this.intervalMs > 0) await this.sleep(this.intervalMs);
       else if (n % 500 === 0) await new Promise((r) => setImmediate(r));
     }
   }
 
   stop(): void {
     this.stopped = true;
+    this.wake?.();
+  }
+
+  /** Change the real-time pace; takes effect immediately. `Infinity` pauses. */
+  setIntervalMs(ms: number): void {
+    this.intervalMs = ms;
     this.wake?.();
   }
 
@@ -122,14 +130,20 @@ export class SimFeed implements Feed {
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * this.rand());
   }
 
-  private sleep(ms: number): Promise<void> {
+  private async sleep(ms: number): Promise<void> {
+    while (this.intervalMs === Infinity && !this.stopped) await this.waitForWake(Infinity);
+    if (!this.stopped) await this.waitForWake(Math.min(ms, this.intervalMs));
+  }
+
+  private waitForWake(ms: number): Promise<void> {
     return new Promise((resolve) => {
       const t = setTimeout(() => {
         this.wake = null;
         resolve();
-      }, ms);
+      }, Number.isFinite(ms) ? ms : 2 ** 31 - 1);
       this.wake = () => {
         clearTimeout(t);
+        this.wake = null;
         resolve();
       };
     });
